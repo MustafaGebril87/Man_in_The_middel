@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Attack Blocked — MITM Detector</title>
+  <style>
+    :root {
+      --bg: #0c0a0a;
+      --card: #1a0a0a;
+      --border: #3f1515;
+      --text: #f5e0e0;
+      --muted: #9c7070;
+      --danger: #ef4444;
+      --danger-glow: rgba(239,68,68,0.25);
+      --safe: #10b981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 580px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .shield {
+      font-size: 72px;
+      margin-bottom: 16px;
+      filter: drop-shadow(0 0 24px var(--danger));
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { filter: drop-shadow(0 0 16px var(--danger)); }
+      50%       { filter: drop-shadow(0 0 36px var(--danger)); }
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--danger);
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      font-size: 15px;
+      color: var(--muted);
+      margin-bottom: 28px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 16px;
+      text-align: left;
+    }
+
+    .attack-type {
+      display: inline-block;
+      background: rgba(239,68,68,0.15);
+      color: var(--danger);
+      border: 1px solid rgba(239,68,68,0.3);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 3px 10px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+    }
+
+    .hostname {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      word-break: break-all;
+    }
+
+    .message {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .what-happened {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .what-happened h3 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .what-happened p {
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    button {
+      width: 100%;
+      padding: 13px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s;
+    }
+
+    .btn-safe {
+      background: var(--safe);
+      color: #fff;
+    }
+    .btn-safe:hover { background: #0ea573; transform: translateY(-1px); }
+
+    .btn-back {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-back:hover { border-color: var(--muted); }
+
+    .btn-proceed {
+      background: transparent;
+      border: 1px solid rgba(239,68,68,0.3);
+      color: var(--danger);
+      font-size: 12px;
+      padding: 9px 16px;
+    }
+    .btn-proceed:hover { background: rgba(239,68,68,0.1); }
+
+    .warning-text {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    .safe-url-note {
+      font-size: 12px;
+      color: var(--safe);
+      margin-bottom: 12px;
+      display: none;
+    }
+    .safe-url-note.visible { display: block; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="shield">🛡</div>
+  <h1>Attack Blocked</h1>
+  <p class="subtitle">MITM Detector prevented a potential Man-in-the-Middle attack</p>
+
+  <div class="card">
+    <div class="attack-type" id="attackType">UNKNOWN</div>
+    <div class="hostname" id="hostname">—</div>
+    <div class="message" id="message">No details available.</div>
+
+    <div class="what-happened">
+      <h3>What this means</h3>
+      <p id="explanation">An attempt to intercept your network traffic was detected and blocked.</p>
+    </div>
+  </div>
+
+  <p class="safe-url-note" id="safeUrlNote"></p>
+
+  <div class="actions">
+    <button class="btn-safe" id="btnGoSafe" style="display:none">Go to Secure Version (HTTPS)</button>
+    <button class="btn-back" id="btnGoBack">← Go Back to Safety</button>
+    <button class="btn-proceed" id="btnProceed">Proceed anyway (not recommended)</button>
+    <p class="warning-text">Proceeding may expose your credentials or personal data to an attacker.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  const TYPE_LABELS = {
+    SSL_STRIPPING:          "SSL Stripping",
+    HTTPS_DOWNGRADE:        "HTTPS Downgrade",
+    REDIRECT_HTTPS_TO_HTTP: "HTTPS→HTTP Redirect",
+    HSTS_REMOVED:           "HSTS Header Stripped",
+    BLOCKED_INSECURE_SCRIPT:"Insecure Script Injection",
+    BLOCKED_INSECURE_FORM:  "Insecure Form Submission",
+    HIGH_VALUE_HTTP:        "High-Value Site Over HTTP"
+  };
+
+  const EXPLANATIONS = {
+    SSL_STRIPPING: "SSL stripping is an attack where a malicious actor (on your network or between you and the server) forces your browser to use an unencrypted HTTP connection instead of HTTPS, allowing them to read or modify all data you send and receive.",
+    HTTPS_DOWNGRADE: "This site was previously accessed securely over HTTPS but is now being served over plain HTTP. This can indicate that someone on your network is actively intercepting your traffic.",
+    REDIRECT_HTTPS_TO_HTTP: "The server tried to redirect you from a secure HTTPS connection to an insecure HTTP one. Legitimate sites never do this — it is a classic sign of an intercepting proxy or MITM attack.",
+    HSTS_REMOVED: "The HTTP Strict Transport Security (HSTS) header, which tells your browser to always use HTTPS, was present on previous visits but has now been removed. This may indicate traffic is being intercepted and security headers are being stripped.",
+    BLOCKED_INSECURE_SCRIPT: "A script was injected into this page from an insecure HTTP source. Attackers use this technique to inject malicious code into HTTPS pages, often to steal credentials or cookies.",
+    BLOCKED_INSECURE_FORM: "This form was about to send your credentials or payment information over an unencrypted HTTP connection. An attacker could read this data in plain text.",
+    HIGH_VALUE_HTTP: "This is a high-value domain (bank, email, social media, payment) being accessed over plain HTTP instead of HTTPS. This strongly suggests SSL stripping is occurring."
+  };
+
+  let attackInfo = null;
+
+  try {
+    const hash = decodeURIComponent(location.hash.replace(/^#/, ""));
+    if (hash) attackInfo = JSON.parse(hash);
+  } catch (_) {}
+
+  if (attackInfo) {
+    const type  = attackInfo.type  || "UNKNOWN";
+    const host  = attackInfo.hostname || attackInfo.url || "Unknown host";
+    const msg   = attackInfo.message  || "";
+    const safe  = attackInfo.safeUrl  || null;
+
+    document.getElementById("attackType").textContent = TYPE_LABELS[type] || type.replace(/_/g, " ");
+    document.getElementById("hostname").textContent   = host;
+    document.getElementById("message").textContent    = msg;
+    document.getElementById("explanation").textContent = EXPLANATIONS[type] || EXPLANATIONS["SSL_STRIPPING"];
+
+    if (safe) {
+      const note = document.getElementById("safeUrlNote");
+      note.textContent = `Safe version: ${safe}`;
+      note.classList.add("visible");
+
+      const btnSafe = document.getElementById("btnGoSafe");
+      btnSafe.style.display = "block";
+      btnSafe.addEventListener("click", () => { location.href = safe; });
+    }
+  }
+
+  document.getElementById("btnGoBack").addEventListener("click", () => {
+    if (history.length > 1) history.back();
+    else window.close();
+  });
+
+  document.getElementById("btnProceed").addEventListener("click", () => {
+    if (!attackInfo) return;
+    if (!confirm("Are you sure you want to proceed? Your data may be intercepted by an attacker.")) return;
+
+    chrome.runtime.sendMessage({ type: "PROCEED_ANYWAY", hostname: attackInfo.hostname }, () => {
+      if (attackInfo.url) location.href = attackInfo.url;
+      else history.back();
+    });
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MITM Detector</title>
+  <style>
+    :root {
+      --bg: #0f1117; --bg2: #1a1d27; --bg3: #232637;
+      --border: #2e3250; --text: #e2e4ef; --muted: #8b8fa8;
+      --accent: #4f6ef7; --critical: #ef4444; --high: #f97316;
+      --medium: #eab308; --safe: #10b981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 430px; min-height: 320px; max-height: 620px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px; background: var(--bg); color: var(--text);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    /* Header */
+    header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 14px; background: var(--bg2);
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    header .logo {
+      width: 26px; height: 26px; background: var(--accent);
+      border-radius: 6px; display: flex; align-items: center;
+      justify-content: center; font-size: 14px;
+    }
+    header h1 { font-size: 14px; font-weight: 700; flex: 1; }
+    .status-pill {
+      display: flex; align-items: center; gap: 5px;
+      padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600;
+      border: 1px solid; transition: all 0.3s;
+    }
+    .status-pill.active   { background: rgba(16,185,129,0.1); color: var(--safe);     border-color: rgba(16,185,129,0.3); }
+    .status-pill.inactive { background: rgba(239,68,68,0.1);  color: var(--critical); border-color: rgba(239,68,68,0.3); }
+    .status-pill.alert    { background: rgba(239,68,68,0.15); color: var(--critical); border-color: rgba(239,68,68,0.4);
+                            animation: blink 1.2s ease-in-out infinite; }
+    @keyframes blink { 50% { opacity: 0.6; } }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+    /* Stats */
+    .stats-bar { display: flex; gap: 1px; background: var(--border); flex-shrink: 0; }
+    .stat { flex: 1; padding: 8px 6px; background: var(--bg2); text-align: center; }
+    .stat .val { font-size: 17px; font-weight: 800; line-height: 1; }
+    .stat .lbl { font-size: 9px; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.4px; }
+    .stat.critical .val { color: var(--critical); }
+    .stat.blocked  .val { color: var(--high); }
+    .stat.safe-s   .val { color: var(--safe); }
+
+    /* Current page */
+    .page-info {
+      padding: 8px 14px; background: var(--bg3); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+    }
+    .protocol-badge {
+      padding: 2px 7px; border-radius: 4px; font-size: 11px;
+      font-weight: 700; letter-spacing: 0.5px;
+    }
+    .protocol-badge.https { background: rgba(16,185,129,0.15); color: var(--safe);     border: 1px solid rgba(16,185,129,0.3); }
+    .protocol-badge.http  { background: rgba(239,68,68,0.15);  color: var(--critical); border: 1px solid rgba(239,68,68,0.3); }
+    .page-info .hn { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+    .trust-btn {
+      font-size: 11px; padding: 3px 8px; border-radius: 4px;
+      border: 1px solid var(--border); background: transparent; color: var(--muted);
+      cursor: pointer; transition: all 0.15s;
+    }
+    .trust-btn:hover { border-color: var(--safe); color: var(--safe); }
+
+    /* Tabs */
+    .tabs { display: flex; background: var(--bg2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .tab {
+      flex: 1; padding: 8px 4px; text-align: center; cursor: pointer;
+      font-size: 11px; color: var(--muted); border-bottom: 2px solid transparent; transition: all 0.15s;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* Alert list */
+    .panel { flex: 1; overflow-y: auto; }
+    .panel::-webkit-scrollbar { width: 3px; }
+    .panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .alerts-container { padding: 8px; display: flex; flex-direction: column; gap: 5px; }
+
+    .alert-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-left: 3px solid var(--border); border-radius: 7px; padding: 9px 11px;
+    }
+    .alert-card.unread  { border-left-color: var(--accent); }
+    .alert-card.critical{ border-left-color: var(--critical); }
+    .alert-card.high    { border-left-color: var(--high); }
+    .alert-card.medium  { border-left-color: var(--medium); }
+    .alert-card.blocked-card { background: rgba(239,68,68,0.04); }
+
+    .alert-header { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
+    .sev-badge {
+      font-size: 9px; font-weight: 800; padding: 1px 5px; border-radius: 3px;
+      text-transform: uppercase; letter-spacing: 0.6px;
+    }
+    .sev-badge.critical { background: rgba(239,68,68,0.2);  color: var(--critical); }
+    .sev-badge.high     { background: rgba(249,115,22,0.2); color: var(--high); }
+    .sev-badge.medium   { background: rgba(234,179,8,0.2);  color: var(--medium); }
+    .blocked-badge {
+      font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+      background: rgba(16,185,129,0.15); color: var(--safe); letter-spacing: 0.4px;
+    }
+    .alert-type { font-size: 11px; font-weight: 600; flex: 1; }
+    .alert-time { font-size: 10px; color: var(--muted); }
+    .alert-msg  { font-size: 11px; color: var(--muted); line-height: 1.4; }
+    .alert-host { font-size: 10px; color: var(--accent); margin-top: 2px; }
+
+    /* Empty state */
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 8px; color: var(--muted);
+      padding: 30px; text-align: center; min-height: 160px;
+    }
+    .empty-state .icon { font-size: 36px; }
+
+    /* Settings panel */
+    .settings-panel { padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+    .setting-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 12px; background: var(--bg2); border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .setting-info { flex: 1; }
+    .setting-info .s-title { font-size: 12px; font-weight: 600; }
+    .setting-info .s-desc  { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    .setting-row.master { border-color: rgba(79,110,247,0.4); background: rgba(79,110,247,0.06); }
+
+    /* Toggle switch */
+    .toggle { position: relative; width: 34px; height: 19px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0; background: var(--border);
+      border-radius: 19px; cursor: pointer; transition: 0.2s;
+    }
+    .slider::before {
+      content: ""; position: absolute;
+      width: 13px; height: 13px; left: 3px; bottom: 3px;
+      background: white; border-radius: 50%; transition: 0.2s;
+    }
+    input:checked + .slider { background: var(--accent); }
+    input:checked + .slider::before { transform: translateX(15px); }
+    input:disabled + .slider { opacity: 0.4; cursor: not-allowed; }
+
+    /* Host info */
+    .host-panel { padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
+    .info-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 6px 10px; background: var(--bg2); border-radius: 6px; border: 1px solid var(--border);
+    }
+    .info-row .lbl { color: var(--muted); font-size: 11px; }
+    .info-row .val { font-size: 12px; font-weight: 500; }
+    .val.good { color: var(--safe); }
+    .val.bad  { color: var(--critical); }
+    .val.warn { color: var(--medium); }
+
+    /* Footer */
+    footer {
+      display: flex; gap: 6px; padding: 8px 14px;
+      border-top: 1px solid var(--border); background: var(--bg2); flex-shrink: 0;
+    }
+    footer button {
+      flex: 1; padding: 6px 0; border-radius: 5px;
+      border: 1px solid var(--border); background: var(--bg3);
+      color: var(--text); font-size: 11px; cursor: pointer; transition: all 0.15s;
+    }
+    footer button:hover { background: var(--border); }
+    footer button.danger:hover { border-color: var(--critical); color: var(--critical); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🛡</div>
+  <h1>MITM Detector</h1>
+  <div class="status-pill active" id="statusPill">
+    <div class="status-dot"></div>
+    <span id="statusText">Protected</span>
+  </div>
+</header>
+
+<div class="stats-bar">
+  <div class="stat critical">
+    <div class="val" id="statCritical">0</div>
+    <div class="lbl">Critical</div>
+  </div>
+  <div class="stat blocked">
+    <div class="val" id="statBlocked">0</div>
+    <div class="lbl">Blocked</div>
+  </div>
+  <div class="stat safe-s">
+    <div class="val" id="statHosts">0</div>
+    <div class="lbl">Tracked</div>
+  </div>
+</div>
+
+<div class="page-info">
+  <span class="protocol-badge" id="protoBadge">?</span>
+  <span class="hn" id="curHost">—</span>
+  <button class="trust-btn" id="trustBtn">Trust Host</button>
+</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="alerts">Alerts</div>
+  <div class="tab" data-tab="settings">Settings</div>
+  <div class="tab" data-tab="host">Host Info</div>
+</div>
+
+<!-- Alerts Tab -->
+<div id="tabAlerts" class="panel">
+  <div class="alerts-container" id="alertsList"></div>
+</div>
+
+<!-- Settings Tab -->
+<div id="tabSettings" class="panel" style="display:none">
+  <div class="settings-panel">
+
+    <div class="setting-row master">
+      <div class="setting-info">
+        <div class="s-title">Prevention Mode</div>
+        <div class="s-desc">Actively block attacks, not just detect them</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="togglePrevention" checked />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-info">
+        <div class="s-title">Auto-Upgrade HTTP → HTTPS</div>
+        <div class="s-desc">Force HTTPS for 30+ known high-value domains via browser rules</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="toggleUpgrade" checked />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-info">
+        <div class="s-title">Show Blocking Page</div>
+        <div class="s-desc">Replace attack pages with an explanation & safe options</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="toggleBlockPage" checked />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-info">
+        <div class="s-title">Block HTTP Sub-Resources</div>
+        <div class="s-desc">Block HTTP scripts & iframes on any page (aggressive)</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="toggleBlockSub" />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-info">
+        <div class="s-title">Desktop Notifications</div>
+        <div class="s-desc">Show a notification when an attack is blocked</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="toggleNotify" checked />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+  </div>
+</div>
+
+<!-- Host Info Tab -->
+<div id="tabHost" class="panel" style="display:none">
+  <div class="host-panel" id="hostPanel"></div>
+</div>
+
+<footer>
+  <button id="btnMarkRead">Mark All Read</button>
+  <button id="btnClear" class="danger">Clear Alerts</button>
+</footer>
+
+<script src="popup.js"></script>
+</body>
+</html>
